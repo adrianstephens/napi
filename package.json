@@ -1,0 +1,15 @@
+{
+  "name": "@isopodlabs/napi",
+  "version": "0.0.0",
+  "description": "Self contained package for XML reading, writing and manipulation.",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrianstephens/napi-package.git"
+  },
+  "author": "Adrian Stephens",
+  "license": "MIT"
+}

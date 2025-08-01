@@ -1,0 +1,64 @@
+// See https://go.microsoft.com/fwlink/?LinkId=733558
+// for the documentation about the tasks.json format
+{
+	"version": "2.0.0",
+	"tasks": [
+
+		{
+			"label": "Get Native Dev Headers for VS Code",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy", "Bypass",
+				"-Command",
+				"$vscodePkg = Join-Path '${execPath}' '..\\resources\\app\\package.json';",
+				"$electronVer = (Get-Content $vscodePkg -Raw | ConvertFrom-Json).devDependencies.electron;",
+				"$releases = Invoke-RestMethod \"https://releases.electronjs.org/releases.json\";",
+				"$nodeVer = 'v'+($releases | Where-Object { $_.version -eq $electronVer }).node;",
+				"Write-Host \"Mapped Electron version: $electronVer to Node.js version: $nodeVer\";",
+				"$outPath = 'reg/electron';",
+				"New-Item -ItemType Directory -Force -Path $outPath | Out-Null;",
+				"Write-Host \"Downloading https://nodejs.org/download/release/$nodeVer/node-$nodeVer-headers.tar.gz to $outPath/headers.tar.gz\";",
+				"Invoke-WebRequest \"https://nodejs.org/download/release/$nodeVer/node-$nodeVer-headers.tar.gz\" -OutFile \"$outPath/headers.tar.gz\";",
+				"Write-Host \"Downloading https://nodejs.org/download/release/$nodeVer/win-x64/node.lib to $outPath/node.lib\";",
+				"Invoke-WebRequest \"https://nodejs.org/download/release/$nodeVer/win-x64/node.lib\" -OutFile \"$outPath/node.lib\";",
+				"Write-Host \"Headers and node.lib downloaded to $outPath\";",
+				"tar -xf $outPath\\headers.tar.gz -C $outPath --strip-components 1;",
+			],
+			"problemMatcher": []
+		},
+		{
+			"type": "shell",
+			"label": "Build NAPI",
+			"command": "clang-cl",
+			"args": [
+				"-I", "reg\\electron\\include\\node",
+				"/LD",
+				"-g",
+				"-std:c++17",
+				"reg\\reg-napi.cpp",
+				"-DWIN32_LEAN_AND_MEAN", "-D_CRT_SECURE_NO_WARNINGS",
+				"-o", "reg\\reg-napi.node",
+				"-link","/DELAYLOAD:node.exe",
+				"reg\\electron\\node.lib",
+				"Advapi32.lib",
+				//"/DEFAULTLIB:Delayimp.lib", 
+			],
+			"problemMatcher": {
+				"owner": "cpp",
+				"fileLocation": [
+					"relative", "${workspaceFolder}"
+				],
+				"pattern": {
+					"regexp": "(.*)\\((.*)\\) *: *(warning|error) *: *(.*)",
+					"file": 1,
+					"location": 2,
+					"severity": 3,
+					"message": 4
+				}
+			},
+			"group":  "build",
+		},
+	]
+}
