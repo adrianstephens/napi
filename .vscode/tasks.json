@@ -60,5 +60,30 @@
 			},
 			"group":  "build",
 		},
+		{
+			"type": "shell",
+			"label": "prepublish",
+			"command": "git add .; npm version ${input:version} --force",
+			"windows": {
+				"command": "git add . & npm version ${input:version} --force",
+			},
+			"problemMatcher": [],
+		},
+		{
+			"type": "shell",
+			"label": "PUBLISH",
+			"command": "npm publish --access public",
+			"problemMatcher": [],
+			"dependsOn": "prepublish"
+		},
+	],
+	"inputs": [
+		{
+			"id": "version",
+			"description": "Version bump:",
+			"type": "pickString",
+			"options": ["patch", "minor", "major"],
+			"default": "none"
+		},
 	]
 }

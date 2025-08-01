@@ -1,0 +1,10 @@
+node_modules
+hidden
+*.vsix
+.vs
+**/*.ilk
+**/*.pdb
+**/*.lib
+**/*.exp
+**/*.node  
+.vscode/ipch/
