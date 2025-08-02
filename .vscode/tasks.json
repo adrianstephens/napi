@@ -7,25 +7,8 @@
 		{
 			"label": "Get Native Dev Headers for VS Code",
 			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoProfile",
-				"-ExecutionPolicy", "Bypass",
-				"-Command",
-				"$vscodePkg = Join-Path '${execPath}' '..\\resources\\app\\package.json';",
-				"$electronVer = (Get-Content $vscodePkg -Raw | ConvertFrom-Json).devDependencies.electron;",
-				"$releases = Invoke-RestMethod \"https://releases.electronjs.org/releases.json\";",
-				"$nodeVer = 'v'+($releases | Where-Object { $_.version -eq $electronVer }).node;",
-				"Write-Host \"Mapped Electron version: $electronVer to Node.js version: $nodeVer\";",
-				"$outPath = 'reg/electron';",
-				"New-Item -ItemType Directory -Force -Path $outPath | Out-Null;",
-				"Write-Host \"Downloading https://nodejs.org/download/release/$nodeVer/node-$nodeVer-headers.tar.gz to $outPath/headers.tar.gz\";",
-				"Invoke-WebRequest \"https://nodejs.org/download/release/$nodeVer/node-$nodeVer-headers.tar.gz\" -OutFile \"$outPath/headers.tar.gz\";",
-				"Write-Host \"Downloading https://nodejs.org/download/release/$nodeVer/win-x64/node.lib to $outPath/node.lib\";",
-				"Invoke-WebRequest \"https://nodejs.org/download/release/$nodeVer/win-x64/node.lib\" -OutFile \"$outPath/node.lib\";",
-				"Write-Host \"Headers and node.lib downloaded to $outPath\";",
-				"tar -xf $outPath\\headers.tar.gz -C $outPath --strip-components 1;",
-			],
+			"command": "node",
+			"args": ["get-headers.js", "${execPath}", "electron"],
 			"problemMatcher": []
 		},
 		{
@@ -33,30 +16,37 @@
 			"label": "Build NAPI",
 			"command": "clang-cl",
 			"args": [
-				"-I", "reg\\electron\\include\\node",
+				"-I", "include",
+				"-I", "electron\\include\\node",
 				"/LD",
 				"-g",
 				"-std:c++17",
-				"reg\\reg-napi.cpp",
-				"-DWIN32_LEAN_AND_MEAN", "-D_CRT_SECURE_NO_WARNINGS",
-				"-o", "reg\\reg-napi.node",
+				"/TP",
+
+				"example\\example.cpp",
+				"-DWIN32_LEAN_AND_MEAN", "-D_CRT_SECURE_NO_WARNINGS", "-DNOMINMAX",
+				"-o", "out\\example.node",
 				"-link","/DELAYLOAD:node.exe",
-				"reg\\electron\\node.lib",
-				"Advapi32.lib",
+				"electron\\node.lib",
 				//"/DEFAULTLIB:Delayimp.lib", 
 			],
 			"problemMatcher": {
 				"owner": "cpp",
-				"fileLocation": [
-					"relative", "${workspaceFolder}"
-				],
-				"pattern": {
-					"regexp": "(.*)\\((.*)\\) *: *(warning|error) *: *(.*)",
-					"file": 1,
-					"location": 2,
-					"severity": 3,
-					"message": 4
-				}
+				"fileLocation": "absolute",
+				"pattern": [
+					{
+						"regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(warning|error|fatal error):\\s+(.*)",
+						"file": 1,
+						"line": 2,
+						"column": 3,
+						"severity": 4,
+						"message": 5
+					},
+					{
+						"regexp": "^\\s+([a-zA-Z].*)",
+						"message": 1
+					}
+				]
 			},
 			"group":  "build",
 		},

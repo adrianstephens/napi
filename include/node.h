@@ -1,5 +1,5 @@
-#include <node_api.h>
 #include "base.h"
+#include <node_api.h>
 
 template<auto F, typename = decltype(F)> struct field {
 	const char *name;

@@ -1,5 +1,6 @@
 node_modules
 hidden
+electron
 *.vsix
 .vs
 **/*.ilk

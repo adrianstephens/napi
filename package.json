@@ -1,11 +1,7 @@
 {
   "name": "@isopodlabs/napi",
-  "version": "0.1.1",
-  "description": "Self contained package for XML reading, writing and manipulation.",
-  "files": [
-    "dist",
-    "README.md"
-  ],
+  "version": "0.2.0",
+  "description": "Native node adddon helper.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/adrianstephens/napi.git"
