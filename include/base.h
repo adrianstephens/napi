@@ -77,6 +77,7 @@ template<typename T> constexpr T				clamp(T t, identity_t<T> a, identity_t<T> b)
 template<typename T> constexpr bool				between(T x, identity_t<T> a, identity_t<T> b)	{ return a <= x && x <= b; }
 template<typename A, typename B> auto 			exchange(A& a, const B& b)	{ A t = a; a = b; return t; }
 template<typename T> void						swap(T& a, T& b)			{ T t = a; a = b; b = t; }
+template<typename T> constexpr auto             addr(T &&t) { return &t; }
 
 template<typename T> auto& 						unconst(const T &t)	{ return const_cast<T&>(t); }
 template<typename T> auto& 						toconst(T &t)		{ return const_cast<const T&>(t); }
@@ -100,6 +101,7 @@ template<typename D, typename S> inline void 	copy(D a, D b, S s) { if (a < b) c
 template<typename T>				inline bool	comparen(T *i, T *s, size_t n)	{ return memcmp(i, s, n * sizeof(T)) == 0; }
 template<typename D, typename S>	inline bool	comparen(D i, S s, size_t n)	{ while (n--) if (*i++ != *s++) return false; return true; }
 template<typename D, typename S>	inline bool	compare(D a, D b, S s)			{ return a >= b || comparen(a, s, b - a); }
+
 
 //-----------------------------------------------------------------------------
 //	integers
@@ -156,23 +158,64 @@ template<typename T> 				range<T>	make_range(T a, T b) 		{ return {a, b}; }
 template<typename T> 				range<T>	make_range(T a, size_t n) 	{ return {a, n}; }
 template<typename T, int N> 		range<T*>	make_range(T (&a)[N]) 		{ return {a, N}; }
 
-template<typename T> struct dynamic_range : range<T*> {
+template<typename T, bool = is_trivial_v<T>> struct alloc_block : range<T*> {
 	using range<T*>::a;
 	using range<T*>::b;
+
+	alloc_block()	{}
+	alloc_block(size_t n) : range<T*>((T*)malloc(n * sizeof(T)), n) {}
+	alloc_block(T *a, size_t n)		: range<T*>(a, n) {}
+	alloc_block(T *a, T *b)			: range<T*>(a, b) {}
+	alloc_block(alloc_block &&r)	: alloc_block(r.detach(), r.b) {}
+	auto &operator=(alloc_block &&r)	{ swap(a, r.a); swap(b, r.b); return *this; }
+
+	~alloc_block()  { free(a); }
+	T *detach()     { return exchange(a, nullptr); }
+
+	auto& resize(size_t n) {
+        a = (T*)realloc(a, n * sizeof(T));
+        b = a + n;
+		return *this;
+	}
+};
+
+template<typename T> struct alloc_block<T, false> : range<T*> {
+	using range<T*>::a;
+	using range<T*>::b;
+
+	alloc_block()	{}
+	alloc_block(size_t n) : range<T*>(new T[n], n) {}
+	alloc_block(T *a, size_t n)		: range<T*>(a, n) {}
+	alloc_block(T *a, T *b)			: range<T*>(a, b) {}
+	alloc_block(alloc_block &&r)	: alloc_block(r.detach(), r.b) {}
+	auto &operator=(alloc_block &&r)	{ swap(a, r.a); swap(b, r.b); return *this; }
+
+	~alloc_block()  { delete[] a; }
+	T *detach()     { return exchange(a, nullptr); }
+
+	auto& resize(size_t n) {
+		auto old = a;
+        a = new T[n];
+		copyn(a, old, min(n, b - old));
+		delete[] old;
+        b = a + n;
+		return *this;
+	}
+};
+
+template<typename T> struct growing_block : alloc_block<T> {
+	using alloc_block<T>::a;
+	using alloc_block<T>::b;
 	T	*p = nullptr;
 
-	dynamic_range()	{}
-	dynamic_range(size_t n) : dynamic_range(range<T*>((T*)malloc(n * sizeof(T)), n)) {}
-	explicit dynamic_range(range<T*> r) : range<T*>(r), p(r.b)	{}
-	~dynamic_range() { free(a); }
-	T *detach()	{ return exchange(a, nullptr); }
+	growing_block()	{}
+	growing_block(size_t n)			: alloc_block<T>(n) { p = a; }
+	growing_block(alloc_block<T> &&r)	: alloc_block<T>(std::move(r)) { p = a; }
 
 	T* ensure(size_t n) {
 		if (p + n >= b) {
 			auto offset = p - a;
-			auto newlen = max(offset + n, (b - a) * 2);
-			a = (T*)realloc(a, newlen * sizeof(T));
-			b = a + newlen;
+			this->resize(max(offset + n, (b - a) * 2));
 			p = a + offset;
 		}
 		return p;
@@ -187,6 +230,12 @@ template<typename T> struct dynamic_range : range<T*> {
 	void giveback(size_t size) {
 		p -= size;
 	}
+	void finalize() {
+		b = p;
+	}
+	size_t tell() const {
+		return p - a;
+	}
 };
 
 template<typename T> struct save {
@@ -195,3 +244,9 @@ template<typename T> struct save {
 	~save() { t = t0; }
 };
 
+template<typename T> struct ref_helper {
+    T   t;
+    ref_helper(T t) : t(std::move(t)) {}
+    auto operator->() { return &t; }
+    auto operator->() const { return &t; }
+};

@@ -66,6 +66,12 @@
 			"problemMatcher": [],
 			"dependsOn": "prepublish"
 		},
+		{
+			"type": "shell",
+			"label": "PACKAGE",
+			"command": "npm pack",
+			"problemMatcher": []
+		},
 	],
 	"inputs": [
 		{

@@ -1,7 +1,15 @@
 {
   "name": "@isopodlabs/napi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native node adddon helper.",
+  "files": [
+    "example",
+    "include",
+    "LICENSE",
+    "package.json",
+    "README.md",
+    "getheaders.js"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/adrianstephens/napi.git"

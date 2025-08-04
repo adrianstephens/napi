@@ -6,16 +6,6 @@ template<auto F, typename = decltype(F)> struct field {
 	inline field(const char *name) : name(name) {}
 };
 
-
-template<typename C, size_t N> struct fixed_string {
-	C s[N];
-	fixed_string() 				{ s[0] = 0; }
-	fixed_string(const C *c)	{ strcpy(s, c); }
-	operator const C*() const	{ return s; }
-	auto& operator=(const C *c) { strcpy(s, c); return *this; }
-   	auto	begin()		const	{ return s; }
-};
-
 namespace Node {
 
 struct any_pointer {
@@ -119,9 +109,37 @@ struct callback {
 			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
 			return save(global_env.env, env), to_value(F(from_value<A>(argv[I])...));
 		}
+		template<typename L> static napi_value lambda(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			return save(global_env.env, env), to_value((*(L*)data)(from_value<A>(argv[I])...));
+		}
 	};
 
-	template<size_t...I, typename C, typename R, typename...A> struct helper2<std::index_sequence<I...>, R (C::*)(A...)> {
+	
+	template<size_t...I, typename...A> struct helper2<std::index_sequence<I...>, void (*)(A...)> {
+		template<auto F> static napi_value f(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			return save(global_env.env, env), F(from_value<A>(argv[I])...), undefined;
+		}
+		template<typename L> static napi_value lambda(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			return save(global_env.env, env), (*(L*)data)(from_value<A>(argv[I])...), undefined;
+		}
+	};
+
+    template<size_t...I, typename C, typename R, typename...A> struct helper2<std::index_sequence<I...>, R (C::*)(A...)> {
 		template<auto F> static napi_value f(napi_env env, napi_callback_info info) {
 			size_t		argc = sizeof...(I);
 			napi_value	argv[sizeof...(I)];
@@ -131,9 +149,37 @@ struct callback {
 			auto &c = *wrapped<C>(this_arg);
 			return save(global_env.env, env), to_value((c.*F)(from_value<A>(argv[I])...));
 		}
+        template<typename L> static napi_value lambda(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			return save(global_env.env, env), to_value((*(L*)data)(from_value<A>(argv[I])...));
+		}
 	};
 
-	template<typename I, typename C, typename...A> struct constructor_helper2;
+    template<size_t...I, typename C, typename...A> struct helper2<std::index_sequence<I...>, void (C::*)(A...)> {
+		template<auto F> static napi_value f(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			auto &c = *wrapped<C>(this_arg);
+			return save(global_env.env, env), (c.*F)(from_value<A>(argv[I])...), undefined;
+		}
+        template<typename L> static napi_value lambda(napi_env env, napi_callback_info info) {
+			size_t		argc = sizeof...(I);
+			napi_value	argv[sizeof...(I)];
+			napi_value	this_arg;
+			void*		data;
+			napi_get_cb_info(env, info, &argc, argv, &this_arg, &data);
+			return save(global_env.env, env), (*(L*)data)(from_value<A>(argv[I])...), undefined;
+		}
+	};
+
+    template<typename I, typename C, typename...A> struct constructor_helper2;
 	template<size_t...I, typename C, typename...A> struct constructor_helper2<std::index_sequence<I...>, C, A...> {
 		static napi_value f(napi_env env, napi_callback_info info) {
 			size_t		argc = sizeof...(I);
@@ -146,14 +192,16 @@ struct callback {
 		}
 	};
 
-	template<typename F> struct helper : helper<decltype(+declval<F>)> {};
+	template<typename F> struct helper;// : helper<decltype(+declval<F>)> {};
 	template<typename R, typename...A>				struct helper<R (*)(A...)> 			: helper2<std::index_sequence_for<A...>, R (*)(A...)> {};
 	template<typename C, typename R, typename...A>	struct helper<R (C::*)(A...)> 		: helper2<std::index_sequence_for<A...>, R (C::*)(A...)> {};
 	template<typename C, typename R, typename...A>	struct helper<R (C::*)(A...) const>	: helper2<std::index_sequence_for<A...>, R (C::*)(A...)> {};
 
 	template<auto F> static auto make() 									{ return callback(helper<decltype(F)>::template f<F>); }
+	template<typename L> static auto make(L &&lambda)						{ return callback(helper<decltype(&L::operator())>::template lambda<L>, &lambda); }
 	//template<auto F, typename C, typename...A> static auto make_method()	{ return helper2<std::index_sequence_for<A...>, C, A...>::template f<F>; }
 	template<typename C, typename...A> static auto make_constructor()		{ return callback(constructor_helper2<std::index_sequence_for<A...>, C, A...>::f); }
+    
 	constexpr callback(napi_callback cb, void *data = nullptr) : cb(cb), data(data) {}
 };
 
@@ -268,13 +316,17 @@ class ref {
 protected:
 	napi_ref	v;
 public:
+	ref() : v(nullptr) {}
 	ref(napi_ref v) : v(v) {}
 	ref(napi_value value, uint32_t initial_refcount = 1) { global_env.api<napi_create_reference>()(value, initial_refcount, &v); }
-	~ref() { napi_delete_reference(global_env, v); }
+	ref(ref &&b) : v(b.detach())	{}
+	~ref()							{ if (v) napi_delete_reference(global_env, v); }
+	auto& operator=(ref &&b)		{ swap(v, b.v); return *this; }
 
-	uint32_t add_ref()			{ return global_env.api<napi_reference_ref>()(v); }
-	uint32_t release()			{ return global_env.api<napi_reference_unref>()(v); }
-	value 	operator*() const	{ return global_env.api<napi_get_reference_value>()(v); }
+	napi_ref	detach()			{ return exchange(v, nullptr); }
+	uint32_t	add_ref()	const	{ return global_env.api<napi_reference_ref>()(v); }
+	uint32_t	release()	const	{ return global_env.api<napi_reference_unref>()(v); }
+	value 		operator*() const	{ return global_env.api<napi_get_reference_value>()(v); }
 };
 
 #if NAPI_VERSION >= 5
@@ -282,7 +334,10 @@ ref	value::add_finalizer(void* data, finalizer fin) { return global_env.api<napi
 #endif
 
 template<typename T> struct refT : ref {
+	refT() {}
 	refT(T v, uint32_t initial_refcount = 1) : ref(v, initial_refcount) {}
+	refT(refT &&b) : ref(b.detach())	{}
+	auto& operator=(refT &&b)	{ swap(v, b.v); return *this; }
 	T 	operator*() const	{ return T(global_env.api<napi_get_reference_value>()(v)); }
 };
 
@@ -339,15 +394,15 @@ struct number : value {
 
 struct string : value {
 	explicit string(napi_value v) : value(v) {}
-	string(const char* utf8, size_t length = NAPI_AUTO_LENGTH) 		{ global_env.api<napi_create_string_utf8>()(utf8, NAPI_AUTO_LENGTH, &v); }
+	string(const char* utf8, size_t length = NAPI_AUTO_LENGTH) 		{ global_env.api<napi_create_string_utf8>()(utf8, length, &v); }
 	string(const char16_t* utf16, size_t length = NAPI_AUTO_LENGTH)	{ global_env.api<napi_create_string_utf16>()(utf16, length, &v); }
-	//TBD: napi_create_string_latin1
+
+	static string	latin1(const char* s, size_t length = NAPI_AUTO_LENGTH) {
+		return string(global_env.api<napi_create_string_latin1>()(s, NAPI_AUTO_LENGTH));
+	}
 
 	static string	coerce(value v)		{ return string(global_env.api<napi_coerce_to_string>()(v)); }
 	static string 	is(napi_value v)	{ return string(global_env.type(v) == napi_string ? v : nullptr); }
-
-	template<size_t N> operator fixed_string<char, N>()		{ fixed_string<char, N> s; global_env.api<napi_get_value_string_utf8>()(v, s.s, N); return s; }
-	template<size_t N> operator fixed_string<char16_t, N>()	{ fixed_string<char16_t, N> s; global_env.api<napi_get_value_string_utf16>()(v, s.s, N); return s; }
 
 	size_t	get_latin1(char* buf, size_t bufsize)		{ return global_env.api<napi_get_value_string_latin1>()(v, buf, bufsize); }
 	size_t	get_utf8(char* buf, size_t bufsize)			{ return global_env.api<napi_get_value_string_utf8>()(v, buf, bufsize); }
@@ -413,9 +468,71 @@ struct Promise : value {
 	explicit Promise(napi_value v) : value(v) {}
 	Promise() 								{ global_env.api<napi_create_promise>()(&deferred, &v); }
 	static bool is(napi_value v)			{ return global_env.api<napi_is_promise>()(v); }
-	napi_status resolve(value resolution)	{ return napi_resolve_deferred(global_env, deferred, resolution); }	//deferred is freed
-	napi_status reject(value rejection)		{ return napi_reject_deferred(global_env, deferred, rejection); }	//deferred is freed
+	template<typename T> napi_status resolve(T resolution)	const   { return napi_resolve_deferred(global_env, deferred, to_value(resolution)); }	//deferred is freed
+	template<typename T> napi_status reject(T rejection)	const   { return napi_reject_deferred(global_env, deferred, to_value(rejection)); }	//deferred is freed
 };
+
+// Version for void-returning exec functions
+template<typename E, typename C>
+auto async_work(const char* name, E&& exec, C&& complete) 
+	-> std::enable_if_t<std::is_void_v<decltype(exec())>, napi_async_work> {
+	struct WorkData {
+		E exec;
+		C complete;
+		napi_async_work work;
+	};
+	
+	auto data = new WorkData{std::forward<E>(exec), std::forward<C>(complete)};
+	
+	napi_create_async_work(global_env, nullptr, string(name),
+		[](napi_env env, void* data) {
+			auto work = (WorkData*)data;
+			work->exec();
+		},
+		[](napi_env env, napi_status status, void* data) {
+			auto work = (WorkData*)data;
+			save(global_env.env, env);
+			work->complete(status);
+			napi_delete_async_work(env, work->work);
+			delete work;
+		},
+		data, &data->work);
+	
+	napi_queue_async_work(global_env, data->work);
+	return data->work;
+}
+
+// Version for non-void-returning exec functions
+template<typename E, typename C>
+auto async_work(const char* name, E&& exec, C&& complete) -> std::enable_if_t<!std::is_void_v<decltype(exec())>, napi_async_work> {
+	typedef decltype(exec()) R;
+	struct WorkData {
+		E	exec;
+		C	complete;
+		R 	result;
+		napi_async_work work;
+	};
+	
+	auto data = new WorkData{std::forward<E>(exec), std::forward<C>(complete)};
+	
+	napi_create_async_work(global_env, nullptr, string(name),
+		[](napi_env env, void* data) {
+			auto work = (WorkData*)data;
+			work->result = work->exec();
+		},
+		[](napi_env env, napi_status status, void* data) {
+			auto work = (WorkData*)data;
+			save(global_env.env, env);
+			work->complete(status, work->result);
+			napi_delete_async_work(env, work->work);
+			delete work;
+		},
+		data, &data->work
+	);
+	
+	napi_queue_async_work(global_env, data->work);
+	return data->work;
+}
 
 //-----------------------------------------------------------------------------
 //	function types
@@ -440,9 +557,9 @@ template<> struct node_type<const char*>		: interop<const char*, string> {};
 template<> struct node_type<const char16_t*>	: interop<const char16_t*, string> {};
 template<> struct node_type<long>				: interop<long, number> {};
 template<> struct node_type<unsigned long> 		: interop<unsigned long, number> {};
-template<typename C, size_t N> struct node_type<fixed_string<C, N>> : interop<fixed_string<C, N>, string> {};
+//template<typename C, size_t N> struct node_type<fixed_string<C, N>> : interop<fixed_string<C, N>, string> {};
 
-template<typename T> auto to_value(T x) {
+template<typename T> auto to_value(const T &x) {
 	if constexpr (std::is_base_of_v<value, T>) {
 		return x;
 	} else {
@@ -459,13 +576,18 @@ template<typename T> auto from_value(napi_value x)	{
 
 struct function : value {
 	static function 	is(napi_value v)	{ return function(global_env.type(v) == napi_function ? v : nullptr); }
-	template<auto& F> static function make(const char* name = nullptr, size_t length = NAPI_AUTO_LENGTH, void *data = nullptr) {
+	template<auto& F> static function make(const char* name = nullptr) {
 		return function(name, callback::make<F>());
 	}
 	explicit function(napi_value v) : value(v) {}
 	function(string_param name, callback cb) { global_env.api<napi_create_function>()(name.utf8, name.length, cb.cb, cb.data, &v); }
+	template<typename L> function(string_param name, L &&lambda) : function(name, callback::make(std::forward<L>(lambda))) {}
+
 	value 		call(std::initializer_list<napi_value> args) {
 		return global_env.api<napi_call_function>()(undefined, v, args.size(), args.begin());
+	}
+	value 		call_async(napi_async_context context, std::initializer_list<napi_value> args) {
+		return global_env.api<napi_make_callback>()(context, undefined, v, args.size(), args.begin());
 	}
 	template<typename...A> auto operator()(A...args) {
 		return call({to_value(args)...});
@@ -619,8 +741,15 @@ public:
 	value 		call(prop func, std::initializer_list<napi_value> args) {
 		return global_env.api<napi_call_function>()(v, func.get(v), args.size(), args.begin());
 	}
+
+	value 		call_async(napi_async_context context, prop func, std::initializer_list<napi_value> args) {
+		return global_env.api<napi_make_callback>()(context, v, func.get(v), args.size(), args.begin());
+	}
 	template<typename...A> value	call(prop func, A...args) {
 		return call(func, {to_value(args)...});
+	}
+	template<typename...A> value	call_async(napi_async_context context, prop func, A...args) {
+		return call_async(context, func, {to_value(args)...});
 	}
 
 	auto		begin();
@@ -637,12 +766,12 @@ inline auto object::begin() 	{ return object_iterator(*this, keys(), 0); }
 inline auto object::end() 		{ return object_iterator(*this, keys(), -1); }
 
 struct _global {
-	object	get()	const { static napi_value v(global_env.api<napi_get_null>()()); return object(v); }
-	operator object()		const { return get(); }
-	object	operator->()	const { return get(); }
-	auto	operator[](const char *name) const { return get()[name]; }
+	napi_value	get()	    const { static napi_value v(global_env.api<napi_get_global>()()); return v; }
+	operator napi_value()	const { return get(); }
+	operator object()		const { return object(get()); }
+	auto	operator->()	const { return ref_helper<object>(operator object()); }
+	auto	operator[](const char *name) const { return operator object()[name]; }
 } global;
-
 
 //-----------------------------------------------------------------------------
 //	errors
@@ -668,6 +797,7 @@ class ArrayBuffer : public value {
 public:
 	static auto	is(napi_value v) 	{ return ArrayBuffer(global_env.api<napi_is_arraybuffer>()(v) ? v : nullptr); }
 	explicit ArrayBuffer(napi_value v) : value(v) {}
+	ArrayBuffer() {}
 	ArrayBuffer(size_t byte_length, void** data = nullptr) { global_env.api<napi_create_arraybuffer>()(byte_length, data, &v); }
 #ifndef NODE_API_NO_EXTERNAL_BUFFERS_ALLOWED
 	ArrayBuffer(void* external_data, size_t byte_length, finalizer fin) {
@@ -711,11 +841,11 @@ template<typename T> struct TypedArray : value {
 		return TypedArray(nullptr);
 	}
 	explicit TypedArray(napi_value v) : value(v) {}
-	TypedArray(size_t length, ArrayBuffer arraybuffer, size_t byte_offset) {
+	TypedArray(ArrayBuffer arraybuffer, size_t byte_offset, size_t length) {
 		global_env.api<napi_create_typedarray>()(typedarray_type<T>, length, arraybuffer, byte_offset, &v);
 	}
-	TypedArray(size_t length, T** data = nullptr) : TypedArray(length, ArrayBuffer(length * sizeof(T), (void**)data), 0) {
-	}
+	TypedArray(size_t length, T** data = nullptr) : TypedArray(ArrayBuffer(length * sizeof(T), (void**)data), 0, length) {
+    }
 
 	range<T*> native() {
 		size_t				length;
@@ -855,6 +985,15 @@ public:
 	value escape(value escapee) {
 		return global_env.api<napi_escape_handle>()(v, escapee);
 	}
+};
+
+class callback_scope {
+	napi_callback_scope v;
+public:
+	callback_scope(napi_async_context context, napi_value async_resource)	{
+        global_env.api<napi_open_callback_scope>()(async_resource, context, &v);
+    }
+	~callback_scope()	{ napi_close_callback_scope(global_env, v); }
 };
 
 //-----------------------------------------------------------------------------
