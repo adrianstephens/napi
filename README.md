@@ -16,6 +16,7 @@ If you use this package, consider [buying me a cup of tea](https://coff.ee/adria
 - **Memory management** - RAII-based resource management for handles and references
 - **Error handling** - Integrated error checking and reporting
 - **Cross-platform** - Works on Windows, macOS, and Linux
+- **No dependencies** - Fully self-contained; no reliance on custom tools or build systems
 
 ## Installation
 
