@@ -1,6 +1,7 @@
 #pragma once
 #include <type_traits>
 #include <initializer_list>
+#include <malloc.h>
 
 //-----------------------------------------------------------------------------
 //	bare minimum
